@@ -83,7 +83,7 @@ def upload_to_gemini(path, mime_type=None):
 def index():
     index_html="""
 <form method="post" enctype="multipart/form-data" action="/upload" method="post">
-<body style="background-color:lightblue;">
+<body style="background-color:lightgreen;">
   <div>
     <label for="file">Choose file to upload</label>
     <input type="file" id="file" name="form_file" accept="image/jpeg"/>
