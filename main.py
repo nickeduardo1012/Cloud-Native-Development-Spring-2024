@@ -14,7 +14,7 @@ BUCKET_NAME = 'my-images-upload'
 bucket = storage_client.bucket(BUCKET_NAME)
 
 # Initialize Gemini API
-genai.configure(api_key=os.environ['GEMINI_API_KEY']) # We type in export GEMINI_API_KEY=AIzaSyAhNI8Y7t83bdRuhotgTBsFYVTWnpq77w4 so that it is declared
+genai.configure(api_key=os.environ['GEMINI_API_KEY'])
 model = genai.GenerativeModel('gemini-1.5-flash')  # Or another suitable model
 
 PROMPT = "Generate simple title and description for this image is JSON format." 
