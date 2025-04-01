@@ -26,20 +26,23 @@ def upload_to_gemini(path, mime_type=None):
     # print(file)
     return file
 
-@app.route('/', methods=['GET'])
+@app.route('/')
 def index():
-    # List existing files from Google Cloud Storage
-    blobs = bucket.list_blobs()
-    files = []
-    for blob in blobs:
-        if blob.name.lower().endswith(('.jpeg', '.jpg')):
-            file_data = {
-                'name': blob.name,
-                'has_metadata': bucket.blob(blob.name.replace(".jpg", ".json").replace(".jpeg", ".json")).exists()
-            }
-            files.append(file_data)
+    index_html="""
+<form method="post" enctype="multipart/form-data" action="/upload" method="post">
+  <div>
+    <label for="file">Choose file to upload</label>
+    <input type="file" id="file" name="form_file" accept="image/jpeg"/>
+  </div>
+  <div>
+    <button>Submit</button>
+  </div>
+</form>"""    
 
-    return render_template('index.html', files=files)
+    for file in list_files():
+        index_html += "<li><a href=\"/files/" + file + "\">" + file + "</a></li>"
+
+    return index_html
 
 @app.route('/upload', methods=['POST'])
 def upload():
@@ -75,6 +78,20 @@ def upload():
     
 
     return redirect("/")
+    
+@app.route('/files')
+def list_files():
+    files = []
+    blobs = storage_client.list_blobs(BUCKET_NAME)
+    for blob in blobs:
+        files.append(blob.name)
+    files = files
+    jpegs = []
+    for file in files:
+        if file.lower().endswith(".jpeg") or file.lower().endswith(".jpg"):
+            jpegs.append(file)
+    
+    return jpegs
 
 @app.route('/files/<filename>')
 def get_file(filename):
