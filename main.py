@@ -1,35 +1,108 @@
 import os
-import io
-import json
-from flask import Flask, redirect, request, render_template, Response
+from flask import Flask, redirect, request, send_file, Response
 from google.cloud import storage
 import google.generativeai as genai
-from PIL import Image
+from dotenv import load_dotenv, dotenv_values
+import json
+import io
+
+BUCKET_NAME = "my-images-upload"
+storage_client = storage.Client()
+
+os.makedirs('files', exist_ok = True)
 
 app = Flask(__name__)
 
-# Initialize Google Cloud Storage client
-storage_client = storage.Client()
-BUCKET_NAME = 'my-images-upload'  
-bucket = storage_client.bucket(BUCKET_NAME)
 
-# Initialize Gemini API
-genai.configure(api_key=os.environ['GEMINI_API_KEY'])
-model = genai.GenerativeModel('gemini-1.5-flash')  # Or another suitable model
+def get_list_of_files(bucket_name):
+    """Lists all the blobs in the bucket."""
+    print("\n")
+    print("get_list_of_files: "+bucket_name)
 
-PROMPT = "Generate simple title and description for this image is JSON format." 
+    blobs = storage_client.list_blobs(bucket_name)
+    print(blobs)
+    files = []
+    for blob in blobs:
+        files.append(blob.name)
 
+    return files
+
+def upload_file(bucket_name, file_name):
+    """Send file to bucket."""
+    print("\n")
+    print("upload_file: "+bucket_name+"/"+file_name)
+
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(file_name)
+
+    blob.upload_from_filename(file_name)
+
+    return 
+
+def download_file(bucket_name, file_name):
+    """ Retrieve an object from a bucket and saves locally"""  
+    print("\n")
+    print("download_file: "+bucket_name+"/"+file_name)
+    bucket = storage_client.bucket(bucket_name)
+
+    blob = bucket.blob(file_name)
+    blob.download_to_filename('files/'+file_name)
+    blob.reload()
+   
+    return
+
+
+# export GEMINI_API="your_api_key_here"
+# python main.py
+# to call it locally in cmd line
+
+load_dotenv()
+
+genai.configure(api_key=os.getenv('GEMINI_API'))
+#genai.configure(api_key=os.getenv('GEMINI_API'))
+
+generation_config = {
+  "temperature": 1,
+  "top_p": 0.95,
+  "top_k": 64,
+  "max_output_tokens": 8192,
+  "response_mime_type": "application/json",
+}
+
+PROMPT = "Generate a simple title and description for this image in json format"
+
+model = genai.GenerativeModel(
+  model_name="gemini-1.5-flash",
+#   generation_config=generation_config,
+  # safety_settings = Adjust safety settings
+  # See https://ai.google.dev/gemini-api/docs/safety-settings
+)
 
 def upload_to_gemini(path, mime_type=None):
-    file = genai.upload_file(path, mime_type=mime_type)
-    print(f"Uploaded file '{file.display_name}' as: {file.uri}")
-    # print(file)
-    return file
+  """Uploads the given file to Gemini.
+
+  See https://ai.google.dev/gemini-api/docs/prompting_with_media
+  """
+  file = genai.upload_file(path, mime_type=mime_type)
+  print(f"Uploaded file '{file.display_name}' as: {file.uri}")
+  # print(file)
+  return file
+
+
+#the below might need to be put in upload function in order to call the response into upload to bucket
+# response = model.generate_content(
+#     [upload_to_gemini('ocean.jpg', mime_type="image/jpeg"), "\n\n", PROMPT] #change file.uri to {file.uri} or something else if doesnt work
+# )
+
+# # print(response)
+# print(response.text)
+
 
 @app.route('/')
 def index():
     index_html="""
 <form method="post" enctype="multipart/form-data" action="/upload" method="post">
+<body style="background-color:white;">
   <div>
     <label for="file">Choose file to upload</label>
     <input type="file" id="file" name="form_file" accept="image/jpeg"/>
@@ -37,6 +110,7 @@ def index():
   <div>
     <button>Submit</button>
   </div>
+  </body>
 </form>"""    
 
     for file in list_files():
@@ -44,76 +118,72 @@ def index():
 
     return index_html
 
-@app.route('/upload', methods=['POST'])
+@app.route('/upload', methods=["POST"])
 def upload():
-    file = request.files['form_file']
-
-    filename = file.filename
-
-    # Upload file to Google Cloud Storage
-    blob = bucket.blob(filename)
-    image_data = file.read()
-    blob.upload_from_string(
-        image_data,
-        content_type=file.content_type
-    )
-
-    file.save(os.path.join("",file.filename))
+    file = request.files['form_file']  # item name must match name in HTML form
+    file.save(file.filename)
     response = model.generate_content(
-    [Image.open(file),PROMPT]
+    [upload_to_gemini(file.filename, mime_type="image/jpeg"), PROMPT]
     )
-
     print(response.text)
     left_index=response.text.index("{")
     right_index=response.text.index("}")
-    json_string=response.text[left_index:right_index +1]
+    json_string=response.text[left_index:right_index+1]
     print(json_string)
     json_response=json.loads(json_string)
-    with open(file.filename.split(".")[0]+".json","w") as f:
-        json.dump(json_response,f,indent=4)
-    blob = bucket.blob(file.filename.split(".")[0]+".json")
-    blob.upload_from_filename(file.filename.split(".")[0]+".json")
-    os.remove(file.filename.split(".")[0]+".json")
-    os.remove(file.filename)
-    
+    print(json_response)
+
+    upload_file(BUCKET_NAME, file.filename)
+
+    with open(file.filename.split(".")[0]+".json", "w") as f:
+      json.dump(json_response,f)
+    upload_file(BUCKET_NAME, file.filename.split(".")[0]+".json")
+
+
 
     return redirect("/")
-    
+
 @app.route('/files')
 def list_files():
-    files = []
-    blobs = storage_client.list_blobs(BUCKET_NAME)
-    for blob in blobs:
-        files.append(blob.name)
-    files = files
+    #files = os.listdir("./files")
+    files = get_list_of_files(BUCKET_NAME)
     jpegs = []
     for file in files:
         if file.lower().endswith(".jpeg") or file.lower().endswith(".jpg"):
             jpegs.append(file)
     
     return jpegs
-
+    
 @app.route('/files/<filename>')
 def get_file(filename):
-    blob = bucket.blob(filename.split(".")[0]+".json")
-    file_data = blob.download_as_bytes()
-    json_string=file_data.decode("utf-8")
-    json_str=json.loads(json_string)
-    print(json_str,type(json_str))
-    html=f"""
-    <body>
-    <img src = "/images/{filename}">
-    <p>Title:{json_str["title"]}</p>
-    <p>Description:{json_str["description"]}</p>
-    </body>
-    """
-    return html
 
-@app.route('/images/<filename>')
-def view_image(filename):
-    blob = bucket.blob(filename)
-    file_data = blob.download_as_bytes()
-    return Response(io.BytesIO(file_data), mimetype='image/jpeg')
+  bucket=storage_client.bucket(BUCKET_NAME)
+  blob=bucket.blob(filename.split(".")[0]+".json")
+  file_data=blob.download_as_bytes()
+  json_string=file_data.decode("UTF-8")
+  json_string=json.loads(json_string)
+
+
+  #insert html here, maybe remove return send_file because we can just use filename
+  image_html=f"""
+  <img src = "/images/{filename}">
+  <p> Title: {json_string["title"]}<p>
+  <p> Description: {json_string["description"]}<p>
+"""   
+ 
+  #return send_file(filename)
+  return image_html
+
+@app.route('/images/<imagename>')
+def get_image(imagename):
+  #download_file(BUCKET_NAME, filename)
+  bucket=storage_client.bucket(BUCKET_NAME)
+  blob=bucket.blob(imagename)
+  file_data=blob.download_as_bytes()
+
+  return Response(io.BytesIO(file_data), mimetype='image/jpeg')
+
+
 
 if __name__ == '__main__':
-    app.run(host='localhost', port=5019,debug=True)
+    app.run(debug=True)
