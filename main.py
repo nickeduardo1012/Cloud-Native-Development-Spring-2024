@@ -2,7 +2,6 @@ import os
 from flask import Flask, redirect, request, send_file, Response
 from google.cloud import storage
 import google.generativeai as genai
-from dotenv import load_dotenv, dotenv_values
 import json
 import io
 
@@ -51,10 +50,7 @@ def download_file(bucket_name, file_name):
    
     return
 
-
-load_dotenv()
-
-genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+genai.configure(api_key=os.environ['GEMINI_API_KEY'])
 
 
 generation_config = {
