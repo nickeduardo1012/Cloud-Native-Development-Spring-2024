@@ -52,14 +52,10 @@ def download_file(bucket_name, file_name):
     return
 
 
-# export GEMINI_API="your_api_key_here"
-# python main.py
-# to call it locally in cmd line
-
 load_dotenv()
 
-genai.configure(api_key=os.getenv('GEMINI_API'))
-#genai.configure(api_key=os.getenv('GEMINI_API'))
+genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+
 
 generation_config = {
   "temperature": 1,
@@ -73,9 +69,7 @@ PROMPT = "Generate a simple title and description for this image in json format"
 
 model = genai.GenerativeModel(
   model_name="gemini-1.5-flash",
-#   generation_config=generation_config,
-  # safety_settings = Adjust safety settings
-  # See https://ai.google.dev/gemini-api/docs/safety-settings
+
 )
 
 def upload_to_gemini(path, mime_type=None):
@@ -87,15 +81,6 @@ def upload_to_gemini(path, mime_type=None):
   print(f"Uploaded file '{file.display_name}' as: {file.uri}")
   # print(file)
   return file
-
-
-#the below might need to be put in upload function in order to call the response into upload to bucket
-# response = model.generate_content(
-#     [upload_to_gemini('ocean.jpg', mime_type="image/jpeg"), "\n\n", PROMPT] #change file.uri to {file.uri} or something else if doesnt work
-# )
-
-# # print(response)
-# print(response.text)
 
 
 @app.route('/')
@@ -120,7 +105,7 @@ def index():
 
 @app.route('/upload', methods=["POST"])
 def upload():
-    file = request.files['form_file']  # item name must match name in HTML form
+    file = request.files['form_file']  
     file.save(file.filename)
     response = model.generate_content(
     [upload_to_gemini(file.filename, mime_type="image/jpeg"), PROMPT]
@@ -145,7 +130,6 @@ def upload():
 
 @app.route('/files')
 def list_files():
-    #files = os.listdir("./files")
     files = get_list_of_files(BUCKET_NAME)
     jpegs = []
     for file in files:
@@ -164,19 +148,16 @@ def get_file(filename):
   json_string=json.loads(json_string)
 
 
-  #insert html here, maybe remove return send_file because we can just use filename
   image_html=f"""
   <img src = "/images/{filename}">
   <p> Title: {json_string["title"]}<p>
   <p> Description: {json_string["description"]}<p>
 """   
  
-  #return send_file(filename)
   return image_html
 
 @app.route('/images/<imagename>')
 def get_image(imagename):
-  #download_file(BUCKET_NAME, filename)
   bucket=storage_client.bucket(BUCKET_NAME)
   blob=bucket.blob(imagename)
   file_data=blob.download_as_bytes()
